@@ -169,6 +169,8 @@ var parameter_hunter = function () {
 
     //build paramStringWellFormed string for JSON parsing
     paramStringWellFormed = '{';
+    console.log('params keys:', keys);
+    console.log('params values:', values);
     for (var i = 0; i < keys.length; i++) {
 
       //keys
@@ -229,7 +231,14 @@ var parameter_hunter = function () {
     paramStringWellFormed = paramStringWellFormed.replace(/\\u0027/g, '\'');
     paramStringWellFormed = paramStringWellFormed.replace(/\\u0058/g, ':');
 
-    return paramStringWellFormed;
+    //add keys and values arrays to return string
+    var res = {
+      string:   paramStringWellFormed,
+      keys : keys,
+      values : values
+    }
+
+    return res;
   }
 
   function findparameters(pattern, patternlab) {
@@ -260,14 +269,63 @@ var parameter_hunter = function () {
         var localData = {};
 
         try {
-          paramData = JSON5.parse(paramStringWellFormed);
+         // paramData = JSON5.parse(paramStringWellFormed);
           globalData = JSON5.parse(JSON5.stringify(patternlab.data));
           localData = JSON5.parse(JSON5.stringify(pattern.jsonFileData || {}));
+          paramData = JSON5.parse(paramStringWellFormed.string);
         } catch (err) {
-          console.log('There was an error parsing JSON for ' + pattern.relPath);
-          console.log(err);
+          var keys = paramStringWellFormed.keys,
+            values = paramStringWellFormed.values;
+          // try to parse unquoted values
+          console.log('if:', (keys && values && keys.length > 0 && values.length === keys.length))
+          if (keys && values && keys.length > 0 && values.length === keys.length) {
+            var paramsParsed = {},
+              parsed = [],
+              allData = plutils.mergeData(globalData, localData);
+            // search for value containing _$ at start
+            values.forEach(function (val, index) {
+              if (val.indexOf('__') === 0) {
+                parsed.push(index);
+              }
+            });
+            parsed.forEach(function (param) {
+              var key = keys[param],
+                value = values[param],
+                cut = '"' + key + '":' + value,
+                pos = paramStringWellFormed.string.indexOf(cut),
+                posColon = paramStringWellFormed.string.indexOf(cut + ','),
+                cutlen = cut.length,
+                propName = value.substr(2);
+              console.log('parsing params:', propName, pos, posColon, cut, paramStringWellFormed.string, 'if:', ((pos !== -1 || posColon !== -1) && allData[propName]));
+              if ((pos !== -1 || posColon !== -1) && allData[propName]) {
+                paramsParsed[key] = plutils.mergeData(allData[propName], {});
+                if (posColon !== -1) {
+                  paramStringWellFormed.string = paramStringWellFormed.string.replace(cut + ',', '');
+                }
+                if (pos !== -1) {
+                  paramStringWellFormed.string = paramStringWellFormed.string.replace(cut, '');
+                }
+              }
+            });
+            console.log('parsed params:', parsed, paramsParsed);
+            if (paramStringWellFormed.string.length > 0) {
+              try {
+                paramData = JSON5.parse(paramStringWellFormed.string);
+              }
+              catch (e) {
+                console.log('fail twice', paramStringWellFormed.string);
+              }
+              paramData = plutils.mergeData(paramData, paramsParsed);
+            }
+          }
+          else {
+            console.log('paramStringWellFormed', paramStringWellFormed);
+            console.log('JSON5.stringify(patternlab.data)', JSON5.stringify(patternlab.data));
+            console.log('pattern.jsonFileData', pattern.jsonFileData);
+            console.log('There was an error parsing JSON for ' + pattern.relPath);
+            console.log(err);
+          }
         }
-
         var allData = plutils.mergeData(globalData, localData);
         allData = plutils.mergeData(allData, paramData);
 
